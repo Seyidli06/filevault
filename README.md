@@ -647,6 +647,10 @@ The scheduler:
 - Processes database path checks in batches
 - Logs cleanup results
 - Continues working even if one cleanup execution fails
+- Streams filesystem entries without loading the full storage index into memory
+- Keeps only the configured cleanup batch in memory
+- Queries database paths in bounded batches
+- Deletes temporary files directly during filesystem traversal
 
 Default configuration:
 
@@ -918,4 +922,4 @@ https://github.com/Seyidli06/filevault
 
 ## License
 
-This project is currently intended for educational and portfolio purposes.
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
