@@ -1,0 +1,82 @@
+name: FileVault CI
+
+on:
+  push:
+    branches:
+      - main
+
+  pull_request:
+    branches:
+      - main
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: filevault-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Build, Test and Verify Docker
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      POSTGRES_USER: filevault
+      POSTGRES_PASSWORD: ci-only-postgres-password
+      JWT_SECRET_BASE64: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+      BCRYPT_STRENGTH: 12
+      FORWARD_HEADERS_STRATEGY: NONE
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+          cache-dependency-path: pom.xml
+
+      - name: Make Maven Wrapper executable
+        run: chmod +x mvnw
+
+      - name: Display Java version
+        run: java -version
+
+      - name: Verify Docker environment
+        run: |
+          docker version
+          docker compose version
+
+      - name: Run Maven tests
+        run: |
+          ./mvnw \
+            --batch-mode \
+            --no-transfer-progress \
+            clean verify
+
+      - name: Validate Docker Compose
+        run: docker compose config > /dev/null
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            --tag filevault:ci \
+            .
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: filevault-test-reports-${{ github.run_number }}
+          path: |
+            target/surefire-reports/**
+            target/failsafe-reports/**
+          if-no-files-found: ignore
+          retention-days: 7
