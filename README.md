@@ -1,5 +1,7 @@
 # FileVault
 
+[![FileVault CI](https://github.com/Seyidli06/filevault/actions/workflows/ci.yml/badge.svg)](https://github.com/Seyidli06/filevault/actions/workflows/ci.yml)
+
 FileVault is a secure file upload and metadata management REST API built with Java and Spring Boot.
 
 The application allows users to register, authenticate with JWT, upload supported documents, list their own files with pagination, update file metadata, securely download files, and delete files they own.
@@ -869,6 +871,34 @@ $env:FORWARD_HEADERS_STRATEGY = 'FRAMEWORK'
 With this configuration, client information supplied through standard `Forwarded` and `X-Forwarded-*` headers is reflected in the wrapped HTTP request.
 
 The reverse proxy must remove untrusted forwarded headers received from external clients and generate its own trusted headers. Do not enable forwarded-header processing when clients can connect directly to the application and supply arbitrary proxy headers.
+
+
+## Continuous Integration
+
+The project uses GitHub Actions for continuous integration.
+
+The CI workflow runs automatically on:
+
+- Pushes to the `main` branch
+- Pull requests targeting the `main` branch
+- Manual workflow execution
+
+The workflow performs:
+
+- Java 21 environment setup
+- Maven dependency caching
+- Maven build and integration tests
+- PostgreSQL Testcontainers tests
+- Docker Compose configuration validation
+- Docker image build validation
+- Test report artifact upload
+
+The workflow configuration is located at:
+
+```text
+.github/workflows/ci.yml
+```
+
 
 ## Author
 

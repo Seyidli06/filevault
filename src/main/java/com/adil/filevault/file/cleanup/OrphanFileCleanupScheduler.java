@@ -49,10 +49,7 @@ public class OrphanFileCleanupScheduler {
             );
 
         } catch (RuntimeException exception) {
-            /*
-             * Bir cleanup uğursuz olsa belə scheduler ölmür.
-             * Növbəti intervalda yenidən işləyəcək.
-             */
+
             log.error(
                     "Orphan file cleanup failed",
                     exception

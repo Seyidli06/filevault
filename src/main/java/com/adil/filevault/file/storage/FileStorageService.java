@@ -4,28 +4,37 @@ import org.springframework.core.io.Resource;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.time.Instant;
-import java.util.List;
+import java.util.function.Consumer;
 
 public interface FileStorageService {
 
-    StagedFile stage(MultipartFile file);
+    StagedFile stage(
+            MultipartFile file
+    );
 
     StoredObject commit(
             StagedFile stagedFile,
             String extension
     );
 
-    Resource load(String relativePath);
+    Resource load(
+            String relativePath
+    );
 
-    List<StorageFileEntry> findPermanentFilesOlderThan(
-            Instant cutoff
+    void forEachPermanentFileOlderThan(
+            Instant cutoff,
+            Consumer<StorageFileEntry> consumer
     );
 
     int deleteTemporaryFilesOlderThan(
             Instant cutoff
     );
 
-    void discard(StagedFile stagedFile);
+    void discard(
+            StagedFile stagedFile
+    );
 
-    void delete(String relativePath);
+    void delete(
+            String relativePath
+    );
 }

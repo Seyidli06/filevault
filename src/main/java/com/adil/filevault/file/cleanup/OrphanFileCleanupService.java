@@ -9,6 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -35,16 +36,50 @@ public class OrphanFileCleanupService {
                         .getTemporaryGracePeriodMs()
         );
 
-        List<StorageFileEntry> permanentCandidates =
-                fileStorageService
-                        .findPermanentFilesOlderThan(
-                                orphanCutoff
-                        );
+        int batchSize =
+                cleanupProperties.getBatchSize();
 
-        CleanupCounters counters =
-                deletePermanentOrphans(
-                        permanentCandidates
+        CleanupAccumulator accumulator =
+                new CleanupAccumulator();
+
+        List<StorageFileEntry> batch =
+                new ArrayList<>(batchSize);
+
+        /*
+         * Filesystem stream olunur.
+         *
+         * Bütün namizədlər RAM-a yığılmır.
+         * Yalnız konfiqurasiya edilmiş batch ölçüsü
+         * qədər entry yaddaşda saxlanılır.
+         */
+        fileStorageService
+                .forEachPermanentFileOlderThan(
+                        orphanCutoff,
+                        entry -> {
+                            accumulator.permanentCandidates++;
+
+                            batch.add(entry);
+
+                            if (batch.size() >= batchSize) {
+                                processBatch(
+                                        batch,
+                                        accumulator
+                                );
+
+                                batch.clear();
+                            }
+                        }
                 );
+
+
+        if (!batch.isEmpty()) {
+            processBatch(
+                    batch,
+                    accumulator
+            );
+
+            batch.clear();
+        }
 
         int temporaryFilesDeleted =
                 fileStorageService
@@ -53,88 +88,66 @@ public class OrphanFileCleanupService {
                         );
 
         return new CleanupSummary(
-                permanentCandidates.size(),
-                counters.deleted(),
+                accumulator.permanentCandidates,
+                accumulator.deleted,
                 temporaryFilesDeleted,
-                counters.failures()
+                accumulator.failures
         );
     }
 
-    private CleanupCounters deletePermanentOrphans(
-            List<StorageFileEntry> candidates
+    private void processBatch(
+            List<StorageFileEntry> batch,
+            CleanupAccumulator accumulator
     ) {
-        int deleted = 0;
-        int failures = 0;
+        List<String> candidatePaths = batch
+                .stream()
+                .map(StorageFileEntry::relativePath)
+                .toList();
 
-        int batchSize =
-                cleanupProperties.getBatchSize();
+        Set<String> existingPaths =
+                new HashSet<>(
+                        storedFileRepository
+                                .findExistingRelativePaths(
+                                        candidatePaths
+                                )
+                );
 
-        for (
-                int start = 0;
-                start < candidates.size();
-                start += batchSize
-        ) {
-            int end = Math.min(
-                    start + batchSize,
-                    candidates.size()
-            );
+        for (StorageFileEntry entry : batch) {
+            if (existingPaths.contains(
+                    entry.relativePath()
+            )) {
+                continue;
+            }
 
-            List<StorageFileEntry> batch =
-                    candidates.subList(start, end);
-
-            List<String> candidatePaths = batch
-                    .stream()
-                    .map(StorageFileEntry::relativePath)
-                    .toList();
-
-            Set<String> existingPaths =
-                    new HashSet<>(
-                            storedFileRepository
-                                    .findExistingRelativePaths(
-                                            candidatePaths
-                                    )
-                    );
-
-            for (StorageFileEntry entry : batch) {
-                if (existingPaths.contains(
+            try {
+                fileStorageService.delete(
                         entry.relativePath()
-                )) {
-                    continue;
-                }
+                );
 
-                try {
-                    fileStorageService.delete(
-                            entry.relativePath()
-                    );
+                accumulator.deleted++;
 
-                    deleted++;
 
-                    log.info(
-                            "Deleted orphan file: {}",
-                            entry.relativePath()
-                    );
+                log.debug(
+                        "Deleted orphan file: {}",
+                        entry.relativePath()
+                );
 
-                } catch (RuntimeException exception) {
-                    failures++;
+            } catch (RuntimeException exception) {
+                accumulator.failures++;
 
-                    log.error(
-                            "Could not delete orphan file: {}",
-                            entry.relativePath(),
-                            exception
-                    );
-                }
+                log.error(
+                        "Could not delete orphan file: {}",
+                        entry.relativePath(),
+                        exception
+                );
             }
         }
-
-        return new CleanupCounters(
-                deleted,
-                failures
-        );
     }
 
-    private record CleanupCounters(
-            int deleted,
-            int failures
-    ) {
+    private static final class CleanupAccumulator {
+
+        private int permanentCandidates;
+        private int deleted;
+        private int failures;
     }
 }

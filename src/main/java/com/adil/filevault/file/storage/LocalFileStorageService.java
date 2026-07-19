@@ -4,34 +4,32 @@ import com.adil.filevault.config.FileStorageProperties;
 import com.adil.filevault.exception.FileStorageException;
 import com.adil.filevault.exception.InvalidFileException;
 import jakarta.annotation.PostConstruct;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.UncheckedIOException;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.HexFormat;
-import java.util.UUID;
-import org.springframework.core.io.FileSystemResource;
-import org.springframework.core.io.Resource;
-
-import java.nio.file.NoSuchFileException;
-
-import lombok.extern.slf4j.Slf4j;
-
-import java.nio.file.LinkOption;
-import java.time.Instant;
-import java.util.List;
 import java.util.Objects;
+import java.util.UUID;
+import java.util.function.Consumer;
 import java.util.stream.Stream;
 
 @Service
@@ -67,6 +65,7 @@ public class LocalFileStorageService
         try {
             Files.createDirectories(rootLocation);
             Files.createDirectories(temporaryLocation);
+
         } catch (IOException exception) {
             throw new FileStorageException(
                     "File storage directories could not be created",
@@ -76,7 +75,9 @@ public class LocalFileStorageService
     }
 
     @Override
-    public StagedFile stage(MultipartFile file) {
+    public StagedFile stage(
+            MultipartFile file
+    ) {
         Path temporaryFile = null;
 
         try {
@@ -102,17 +103,25 @@ public class LocalFileStorageService
                                     StandardOpenOption.TRUNCATE_EXISTING
                             )
             ) {
-                byte[] buffer = new byte[BUFFER_SIZE];
+                byte[] buffer =
+                        new byte[BUFFER_SIZE];
+
                 int bytesRead;
 
-                while ((bytesRead =
-                        inputStream.read(buffer)) != -1) {
-
+                while (
+                        (
+                                bytesRead =
+                                        inputStream.read(buffer)
+                        ) != -1
+                ) {
                     totalBytes += bytesRead;
 
                     /*
-                     * Real streamed byte count is checked.
-                     * We do not rely only on MultipartFile#getSize().
+                     * MultipartFile#getSize() məlumatına
+                     * tam etibar etmirik.
+                     *
+                     * Real stream-dən oxunan byte sayı
+                     * ayrıca yoxlanılır.
                      */
                     if (totalBytes > maxFileSizeBytes) {
                         throw new InvalidFileException(
@@ -120,7 +129,12 @@ public class LocalFileStorageService
                         );
                     }
 
-                    digest.update(buffer, 0, bytesRead);
+                    digest.update(
+                            buffer,
+                            0,
+                            bytesRead
+                    );
+
                     outputStream.write(
                             buffer,
                             0,
@@ -137,16 +151,20 @@ public class LocalFileStorageService
 
             String sha256 = HexFormat
                     .of()
-                    .formatHex(digest.digest());
+                    .formatHex(
+                            digest.digest()
+                    );
 
             return new StagedFile(
                     temporaryFile,
                     totalBytes,
                     sha256
             );
+
         } catch (InvalidFileException exception) {
             deleteTemporaryFile(temporaryFile);
             throw exception;
+
         } catch (
                 IOException
                 | NoSuchAlgorithmException exception
@@ -165,14 +183,28 @@ public class LocalFileStorageService
             StagedFile stagedFile,
             String extension
     ) {
+        Objects.requireNonNull(
+                stagedFile,
+                "stagedFile must not be null"
+        );
+
+        Objects.requireNonNull(
+                extension,
+                "extension must not be null"
+        );
+
         LocalDate currentDate =
                 LocalDate.now(ZoneOffset.UTC);
 
         String storedFilename =
-                UUID.randomUUID() + "." + extension;
+                UUID.randomUUID()
+                        + "."
+                        + extension;
 
         Path relativePath = Path.of(
-                Integer.toString(currentDate.getYear()),
+                Integer.toString(
+                        currentDate.getYear()
+                ),
                 "%02d".formatted(
                         currentDate.getMonthValue()
                 ),
@@ -180,7 +212,10 @@ public class LocalFileStorageService
         );
 
         Path destination =
-                resolveSafely(rootLocation, relativePath);
+                resolveSafely(
+                        rootLocation,
+                        relativePath
+                );
 
         try {
             Files.createDirectories(
@@ -203,6 +238,7 @@ public class LocalFileStorageService
                     stagedFile.sizeBytes(),
                     stagedFile.sha256()
             );
+
         } catch (IOException exception) {
             throw new FileStorageException(
                     "File could not be moved to permanent storage",
@@ -212,83 +248,26 @@ public class LocalFileStorageService
     }
 
     @Override
-    public void discard(StagedFile stagedFile) {
-        if (stagedFile != null) {
-            deleteTemporaryFile(stagedFile.path());
-        }
-    }
-
-    @Override
-    public void delete(String relativePath) {
-        Path path = resolveSafely(
-                rootLocation,
-                Path.of(relativePath)
+    public Resource load(
+            String relativePath
+    ) {
+        Objects.requireNonNull(
+                relativePath,
+                "relativePath must not be null"
         );
 
         try {
-            Files.deleteIfExists(path);
-        } catch (IOException exception) {
-            throw new FileStorageException(
-                    "Stored file could not be deleted",
-                    exception
-            );
-        }
-    }
+            Path requestedPath =
+                    resolveSafely(
+                            rootLocation,
+                            Path.of(relativePath)
+                    );
 
-    private void moveFile(
-            Path source,
-            Path destination
-    ) throws IOException {
-        try {
-            Files.move(
-                    source,
-                    destination,
-                    StandardCopyOption.ATOMIC_MOVE
-            );
-        } catch (AtomicMoveNotSupportedException exception) {
-            Files.move(source, destination);
-        }
-    }
+            Path realRoot =
+                    rootLocation.toRealPath();
 
-    private Path resolveSafely(
-            Path baseLocation,
-            Path relativePath
-    ) {
-        Path resolved = baseLocation
-                .resolve(relativePath)
-                .normalize();
-
-        if (!resolved.startsWith(baseLocation)) {
-            throw new FileStorageException(
-                    "Unsafe file storage path"
-            );
-        }
-
-        return resolved;
-    }
-
-    private void deleteTemporaryFile(Path path) {
-        if (path == null) {
-            return;
-        }
-
-        try {
-            Files.deleteIfExists(path);
-        } catch (IOException ignored) {
-            // Main upload error must not be hidden.
-        }
-    }
-
-    @Override
-    public Resource load(String relativePath) {
-        try {
-            Path requestedPath = resolveSafely(
-                    rootLocation,
-                    Path.of(relativePath)
-            );
-
-            Path realRoot = rootLocation.toRealPath();
-            Path realFile = requestedPath.toRealPath();
+            Path realFile =
+                    requestedPath.toRealPath();
 
             /*
              * Symlink vasitəsilə storage root-dan
@@ -300,20 +279,26 @@ public class LocalFileStorageService
                 );
             }
 
-            if (!Files.isRegularFile(realFile)
-                    || !Files.isReadable(realFile)) {
-
+            if (
+                    !Files.isRegularFile(
+                            realFile,
+                            LinkOption.NOFOLLOW_LINKS
+                    )
+                            || !Files.isReadable(realFile)
+            ) {
                 throw new FileStorageException(
                         "Stored file is not readable"
                 );
             }
 
             return new FileSystemResource(realFile);
+
         } catch (NoSuchFileException exception) {
             throw new FileStorageException(
                     "The physical file does not exist",
                     exception
             );
+
         } catch (IOException exception) {
             throw new FileStorageException(
                     "Stored file could not be loaded",
@@ -323,11 +308,32 @@ public class LocalFileStorageService
     }
 
     @Override
-    public List<StorageFileEntry> findPermanentFilesOlderThan(
-            Instant cutoff
+    public void forEachPermanentFileOlderThan(
+            Instant cutoff,
+            Consumer<StorageFileEntry> consumer
     ) {
-        try (Stream<Path> paths = Files.walk(rootLocation)) {
-            return paths
+        Objects.requireNonNull(
+                cutoff,
+                "cutoff must not be null"
+        );
+
+        Objects.requireNonNull(
+                consumer,
+                "consumer must not be null"
+        );
+
+        /*
+         * Files.walk lazy stream qaytarır.
+         *
+         * Tapılan fayllar əvvəlcə böyük List-ə
+         * yığılmır. Hər uyğun entry bir-bir
+         * consumer-ə ötürülür.
+         */
+        try (
+                Stream<Path> paths =
+                        Files.walk(rootLocation)
+        ) {
+            paths
                     .filter(path ->
                             Files.isRegularFile(
                                     path,
@@ -335,14 +341,104 @@ public class LocalFileStorageService
                             )
                     )
                     .map(path ->
-                            createStorageEntry(path, cutoff)
+                            createStorageEntry(
+                                    path,
+                                    cutoff
+                            )
                     )
                     .filter(Objects::nonNull)
-                    .toList();
+                    .forEach(consumer);
+
+        } catch (
+                IOException
+                | UncheckedIOException exception
+        ) {
+            throw new FileStorageException(
+                    "Permanent storage could not be scanned",
+                    exception
+            );
+        }
+    }
+
+    @Override
+    public int deleteTemporaryFilesOlderThan(
+            Instant cutoff
+    ) {
+        Objects.requireNonNull(
+                cutoff,
+                "cutoff must not be null"
+        );
+
+        /*
+         * Temporary fayllar da əvvəlcə List-ə
+         * yığılmadan birbaşa stream zamanı silinir.
+         */
+        try (
+                Stream<Path> paths =
+                        Files.walk(temporaryLocation)
+        ) {
+            return paths
+                    .filter(path ->
+                            Files.isRegularFile(
+                                    path,
+                                    LinkOption.NOFOLLOW_LINKS
+                            )
+                    )
+                    .filter(path ->
+                            isOlderThan(
+                                    path,
+                                    cutoff
+                            )
+                    )
+                    .mapToInt(
+                            this::deleteTemporaryCandidate
+                    )
+                    .sum();
+
+        } catch (
+                IOException
+                | UncheckedIOException exception
+        ) {
+            throw new FileStorageException(
+                    "Temporary storage could not be scanned",
+                    exception
+            );
+        }
+    }
+
+    @Override
+    public void discard(
+            StagedFile stagedFile
+    ) {
+        if (stagedFile == null) {
+            return;
+        }
+
+        deleteTemporaryFile(
+                stagedFile.path()
+        );
+    }
+
+    @Override
+    public void delete(
+            String relativePath
+    ) {
+        Objects.requireNonNull(
+                relativePath,
+                "relativePath must not be null"
+        );
+
+        Path path = resolveSafely(
+                rootLocation,
+                Path.of(relativePath)
+        );
+
+        try {
+            Files.deleteIfExists(path);
 
         } catch (IOException exception) {
             throw new FileStorageException(
-                    "Permanent storage could not be scanned",
+                    "Stored file could not be deleted",
                     exception
             );
         }
@@ -360,17 +456,18 @@ public class LocalFileStorageService
                     ).toInstant();
 
             /*
-             * Cutoff-dan yeni fayllar cleanup üçün
-             * namizəd deyil.
+             * Cutoff-dan daha yeni fayllar
+             * cleanup namizədi deyil.
              */
             if (lastModifiedAt.isAfter(cutoff)) {
                 return null;
             }
 
-            String relativePath = rootLocation
-                    .relativize(path)
-                    .toString()
-                    .replace('\\', '/');
+            String relativePath =
+                    rootLocation
+                            .relativize(path)
+                            .toString()
+                            .replace('\\', '/');
 
             return new StorageFileEntry(
                     relativePath,
@@ -378,6 +475,10 @@ public class LocalFileStorageService
             );
 
         } catch (IOException exception) {
+            /*
+             * Bir faylın metadata-sı oxunmadıqda
+             * bütün cleanup dayandırılmır.
+             */
             log.warn(
                     "Could not inspect stored file: {}",
                     path,
@@ -388,51 +489,27 @@ public class LocalFileStorageService
         }
     }
 
-    @Override
-    public int deleteTemporaryFilesOlderThan(
-            Instant cutoff
+    private int deleteTemporaryCandidate(
+            Path candidate
     ) {
-        List<Path> candidates;
-
-        try (Stream<Path> paths =
-                     Files.walk(temporaryLocation)) {
-
-            candidates = paths
-                    .filter(path ->
-                            Files.isRegularFile(
-                                    path,
-                                    LinkOption.NOFOLLOW_LINKS
-                            )
-                    )
-                    .filter(path ->
-                            isOlderThan(path, cutoff)
-                    )
-                    .toList();
+        try {
+            return Files.deleteIfExists(candidate)
+                    ? 1
+                    : 0;
 
         } catch (IOException exception) {
-            throw new FileStorageException(
-                    "Temporary storage could not be scanned",
+            /*
+             * Bir temporary fayl silinmədikdə
+             * digər faylların cleanup prosesi davam edir.
+             */
+            log.warn(
+                    "Temporary file could not be deleted: {}",
+                    candidate,
                     exception
             );
+
+            return 0;
         }
-
-        int deletedCount = 0;
-
-        for (Path candidate : candidates) {
-            try {
-                if (Files.deleteIfExists(candidate)) {
-                    deletedCount++;
-                }
-            } catch (IOException exception) {
-                log.warn(
-                        "Temporary file could not be deleted: {}",
-                        candidate,
-                        exception
-                );
-            }
-        }
-
-        return deletedCount;
     }
 
     private boolean isOlderThan(
@@ -456,6 +533,75 @@ public class LocalFileStorageService
             );
 
             return false;
+        }
+    }
+
+    private void moveFile(
+            Path source,
+            Path destination
+    ) throws IOException {
+        try {
+            Files.move(
+                    source,
+                    destination,
+                    StandardCopyOption.ATOMIC_MOVE
+            );
+
+        } catch (
+                AtomicMoveNotSupportedException exception
+        ) {
+            /*
+             * Filesystem atomic move dəstəkləmirsə,
+             * adi move əməliyyatına keçilir.
+             */
+            Files.move(
+                    source,
+                    destination
+            );
+        }
+    }
+
+    private Path resolveSafely(
+            Path baseLocation,
+            Path relativePath
+    ) {
+        Path resolved = baseLocation
+                .resolve(relativePath)
+                .normalize();
+
+        /*
+         * "../" kimi path traversal cəhdlərinin
+         * base storage-dan kənara çıxmasını bloklayır.
+         */
+        if (!resolved.startsWith(baseLocation)) {
+            throw new FileStorageException(
+                    "Unsafe file storage path"
+            );
+        }
+
+        return resolved;
+    }
+
+    private void deleteTemporaryFile(
+            Path path
+    ) {
+        if (path == null) {
+            return;
+        }
+
+        try {
+            Files.deleteIfExists(path);
+
+        } catch (IOException exception) {
+            /*
+             * Əsas upload xətası cleanup xətası
+             * tərəfindən gizlədilməməlidir.
+             */
+            log.warn(
+                    "Temporary file could not be removed: {}",
+                    path,
+                    exception
+            );
         }
     }
 }
