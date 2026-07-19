@@ -1,0 +1,51 @@
+spring:
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/filevault}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD}
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: 10MB
+      max-request-size: 12MB
+
+filevault:
+  cleanup:
+    enabled: true
+    initial-delay-ms: 60000
+    fixed-delay-ms: 21600000
+    orphan-grace-period-ms: 86400000
+    temporary-grace-period-ms: 3600000
+    batch-size: 500
+
+  security:
+    jwt:
+      secret-base64: ${JWT_SECRET_BASE64}
+      access-token-expiration: 15m
+
+  storage:
+    root-location: ${FILE_STORAGE_ROOT:./data/filevault/uploads}
+    temporary-location: ${FILE_TEMP_ROOT:./data/filevault/temp}
+    max-file-size-bytes: 10485760
+    allowed-types:
+      pdf: "application/pdf"
+      docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

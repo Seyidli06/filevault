@@ -1,0 +1,13 @@
+filevault:
+  security:
+    jwt:
+      secret-base64: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+      access-token-expiration: 15m
+
+  storage:
+    root-location: ./target/test-data/filevault/uploads
+    temporary-location: ./target/test-data/filevault/temp
+    max-file-size-bytes: 10485760
+    allowed-types:
+      pdf: "application/pdf"
+      docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
