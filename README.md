@@ -164,6 +164,7 @@ DB_URL
 DB_USERNAME
 FILE_STORAGE_ROOT
 FILE_TEMP_ROOT
+FORWARD_HEADERS_STRATEGY
 ```
 
 Default values:
@@ -173,6 +174,7 @@ DB_URL=jdbc:postgresql://localhost:5432/filevault
 DB_USERNAME=postgres
 FILE_STORAGE_ROOT=./data/filevault/uploads
 FILE_TEMP_ROOT=./data/filevault/temp
+FORWARD_HEADERS_STRATEGY=NONE
 ```
 
 ### PowerShell Example
@@ -850,27 +852,23 @@ File response with SHA-256
 
 ---
 
-## Future Improvements
+## Reverse Proxy Configuration
 
-Possible future improvements include:
+By default, forwarded proxy headers are not trusted:
 
-- Refresh-token support
-- Virus scanning through ClamAV
-- Cloud storage support such as Amazon S3
-- File deduplication using SHA-256
-- Rate limiting
-- Account lockout
-- Email verification
-- Password reset
-- Admin audit endpoints
-- Audit filtering and pagination
-- Docker Compose for the application and PostgreSQL
-- GitHub Actions continuous integration
-- Metrics and monitoring
-- Distributed locking for cleanup in multi-instance deployments
-- Object-storage lifecycle policies
+```text
+FORWARD_HEADERS_STRATEGY=NONE
+```
 
----
+When the application is deployed behind a trusted reverse proxy or load balancer, enable Spring's forwarded-header handling:
+
+```powershell
+$env:FORWARD_HEADERS_STRATEGY = 'FRAMEWORK'
+```
+
+With this configuration, client information supplied through standard `Forwarded` and `X-Forwarded-*` headers is reflected in the wrapped HTTP request.
+
+The reverse proxy must remove untrusted forwarded headers received from external clients and generate its own trusted headers. Do not enable forwarded-header processing when clients can connect directly to the application and supply arbitrary proxy headers.
 
 ## Author
 

@@ -30,6 +30,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.adil.filevault.audit.entity.FileDownloadAudit;
+import org.springframework.data.domain.Sort;
+
 @Testcontainers
 @SpringBootTest(properties = {
         "filevault.security.jwt.secret-base64="
@@ -51,7 +54,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
                 + "application/vnd.openxmlformats-officedocument"
                 + ".wordprocessingml.document",
 
-        "filevault.cleanup.enabled=false"
+        "filevault.cleanup.enabled=false",
+
+        "server.forward-headers-strategy=framework"
 })
 @AutoConfigureMockMvc
 class FileVaultApplicationTests {
@@ -362,6 +367,9 @@ class FileVaultApplicationTests {
                 pdfContent
         );
 
+        String forwardedIp = "203.0.113.42";
+        String userAgent = "FileVault-Integration-Test";
+
         long auditCountBefore =
                 auditRepository.count();
 
@@ -375,8 +383,12 @@ class FileVaultApplicationTests {
                                         bearer(token)
                                 )
                                 .header(
+                                        "X-Forwarded-For",
+                                        forwardedIp
+                                )
+                                .header(
                                         HttpHeaders.USER_AGENT,
-                                        "FileVault-Integration-Test"
+                                        userAgent
                                 )
                 )
                 .andExpect(status().isOk())
@@ -404,6 +416,31 @@ class FileVaultApplicationTests {
         assertEquals(
                 auditCountBefore + 1,
                 auditRepository.count()
+        );
+
+        FileDownloadAudit latestAudit =
+                auditRepository
+                        .findAll(
+                                Sort.by(
+                                        Sort.Direction.DESC,
+                                        "id"
+                                )
+                        )
+                        .getFirst();
+
+        assertEquals(
+                UUID.fromString(fileId),
+                latestAudit.getFileIdSnapshot()
+        );
+
+        assertEquals(
+                forwardedIp,
+                latestAudit.getRequestIp()
+        );
+
+        assertEquals(
+                userAgent,
+                latestAudit.getUserAgent()
         );
     }
 
