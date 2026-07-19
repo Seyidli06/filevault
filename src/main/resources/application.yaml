@@ -32,6 +32,9 @@ filevault:
     batch-size: 500
 
   security:
+    password:
+      bcrypt-strength: ${BCRYPT_STRENGTH:12}
+
     jwt:
       secret-base64: ${JWT_SECRET_BASE64}
       access-token-expiration: 15m
