@@ -1,0 +1,13 @@
+target
+.git
+.github
+.idea
+.vscode
+data
+logs
+.env
+.env.*
+*.log
+*.tmp
+*-error.txt
+README.md

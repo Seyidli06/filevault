@@ -1,0 +1,64 @@
+name: filevault
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: filevault-postgres
+
+    environment:
+      POSTGRES_DB: filevault
+      POSTGRES_USER: ${POSTGRES_USER:-filevault}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be configured}
+
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+
+    volumes:
+      - filevault-postgres-data:/var/lib/postgresql/data
+
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+    restart: unless-stopped
+
+  app:
+    container_name: filevault-app
+
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/filevault
+      DB_USERNAME: ${POSTGRES_USER:-filevault}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be configured}
+
+      JWT_SECRET_BASE64: ${JWT_SECRET_BASE64:?JWT_SECRET_BASE64 must be configured}
+      BCRYPT_STRENGTH: ${BCRYPT_STRENGTH:-12}
+
+      FORWARD_HEADERS_STRATEGY: ${FORWARD_HEADERS_STRATEGY:-NONE}
+
+      FILE_STORAGE_ROOT: /data/filevault/uploads
+      FILE_TEMP_ROOT: /data/filevault/temp
+
+    ports:
+      - "${APP_PORT:-8080}:8080"
+
+    volumes:
+      - filevault-file-data:/data/filevault
+
+    restart: unless-stopped
+
+volumes:
+  filevault-postgres-data:
+  filevault-file-data:
